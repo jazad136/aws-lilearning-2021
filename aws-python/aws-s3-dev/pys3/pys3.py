@@ -19,6 +19,7 @@ base = os.path.join(os.path.sep,"C:",os.path.sep, "Users", "jsaddle", "code", "r
 DIR = os.path.join(base, 'aws-s3-dev', 's3')
 DOWN_DIR = os.path.join(base, 'aws-s3-dev', 's3-alt')
 
+
 def upload_file(bucket, directory, file, s3, s3path=None):
     file_path = os.path.join(directory, file)
     
@@ -53,7 +54,7 @@ def download_file(bucket, directory, local_name, key_name, s3):
         s3.Bucket(bucket).download_file(key_name, file_path)
     except ClientError as ce:
         print('error', ce)
-
+    
 def delete_files(bucket, keys, s3):
     objects = []
     for key in keys:
@@ -63,13 +64,51 @@ def delete_files(bucket, keys, s3):
     except ClientError as ce:
         print('error', ce)
 
-def create_bucket(name, s3):
-    try:
-        location = {'LocationConstraint': REGION}
-        bucket = s3.create_bucket(Bucket=name, CreateBucketConfiguration=location)
+def list_objects(bucket, s3): 
+    try: 
+        response = s3.meta.client.list_objects(Bucket=bucket)
+        objects = []
+        for content in response['Contents']:
+            objects.append(content['Key'])
+        print(bucket, 'contains', len(objects), 'files')
+        return objects
+    
     except ClientError as ce:
         print('error', ce)
+        return []
+
+def copy_file(source_bucket, destination_bucket, source_key, destination_key, s3):
+    try: 
+        source = {
+            'Bucket': source_bucket,
+            'Key': source_key
+        }
+        s3.Bucket(destination_bucket).copy(source, destination_key)
         
+    except ClientError as ce:
+        print('error', ce)
+
+def prevent_public_access(bucket, s3):
+    try:
+        s3.meta.client.put_public_access_block(Bucket=bucket,
+            PublicAccessBlockConfiguration={
+                'BlockPublicAcls': True,
+                'IgnorePublicAcls': True,
+                'BlockPublicPolicy': True,
+                'RestrictPublicBuckets': True
+            });
+    except ClientError as ce:
+        pass
+
+def create_bucket(name, s3, secure=False):
+    try:
+        location = {'LocationConstraint': REGION}
+        s3.create_bucket(Bucket=name, CreateBucketConfiguration=location)
+        if secure:
+            prevent_public_access(name, s3)
+    except ClientError as ce:
+        print('error', ce)
+
 def main():
     """entry point"""
     import boto3
@@ -80,15 +119,11 @@ def main():
     s3 = boto3.resource('s3', 
                         aws_access_key_id=access,
                         aws_secret_access_key=secret)
+    
     # these three methods work. 
-    upload_file(PRI_BUCKET_NAME, DIR, F1, s3)
-    upload_file(PRI_BUCKET_NAME, DIR, F2, s3)
-    upload_file(PRI_BUCKET_NAME, DIR, F3, s3)
     
-    #this does not work. What is a key_name? 
-    download_file(PRI_BUCKET_NAME, DOWN_DIR, F3, F3, s3)
+    create_bucket(TRANSIENT_BUCKET_NAME, s3, True)
+
     
-    delete_files(PRI_BUCKET_NAME, [F1, F2, F3], s3)
-            
 if __name__ == '__main__':
     main()
